@@ -4,7 +4,7 @@
 # RFQ Comparator - SAP CAP Backend Service
 
 An SAP Cloud Application Programming (CAP) model application designed to automate vendor quote processing, compare competing bids, and manage line-item extraction reviews powered by SAP Integration Suite and Google Gemini.
-
+```
 ---
 
 ## 📌 Project Tracker
