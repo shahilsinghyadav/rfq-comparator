@@ -5,6 +5,8 @@
 
 An SAP Cloud Application Programming (CAP) model application designed to automate vendor quote processing, compare competing bids, and manage line-item extraction reviews powered by SAP Integration Suite and Google Gemini.
 ```
+<img width="1913" height="852" alt="image" src="https://github.com/user-attachments/assets/0864ecb0-ab71-40f3-9e15-1648ac4b3705" />
+
 ---
 
 ## 📌 Project Tracker
