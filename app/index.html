@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>RFQ Comparator & AI Ingestion Workbench</title>
+  <style>
+    :root {
+      --primary: #0a6ed1;
+      --bg: #f4f6f9;
+      --card-bg: #ffffff;
+      --border: #dcdfe4;
+      --text: #1d2d3e;
+      --text-muted: #6a737d;
+      --badge-yellow: #fff3cd;
+      --badge-yellow-txt: #856404;
+      --badge-green: #d4edda;
+      --badge-green-txt: #155724;
+      --badge-blue: #d1ecf1;
+      --badge-blue-txt: #0c5460;
+      --danger: #b71c1c;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+    h1 { font-size: 22px; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: 350px 1fr; gap: 24px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px; }
+    h2 { font-size: 16px; margin-top: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; margin-bottom: 14px; }
+    button { background: var(--primary); color: #fff; border: none; padding: 9px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: #6c757d; }
+    button.success { background: #28a745; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+    th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+    th { background: #f8f9fa; font-weight: 600; }
+    .badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; display: inline-block; }
+    .status-PROCESSING { background: var(--badge-blue); color: var(--badge-blue-txt); }
+    .status-NEEDS_REVIEW { background: var(--badge-yellow); color: var(--badge-yellow-txt); }
+    .status-READY { background: var(--badge-green); color: var(--badge-green-txt); }
+    .status-COMPARED { background: #e2e3e5; color: #383d41; }
+    .alert-bar { padding: 8px 12px; border-radius: 4px; margin-bottom: 14px; font-size: 13px; display: none; }
+    .alert-success { background: var(--badge-green); color: var(--badge-green-txt); }
+    .alert-error { background: #f8d7da; color: var(--danger); }
+  </style>
+</head>
+<body>
+
+  <h1>RFQ AI Comparator & Ingestion Console</h1>
+  <div id="alert" class="alert-bar"></div>
+
+  <div class="grid">
+    <!-- LEFT COLUMN: Input Forms -->
+    <div>
+      <!-- 1. Quote Upload Form -->
+      <div class="card">
+        <h2>1. Upload / Ingest Vendor Quote</h2>
+        <label for="selRfq">Target RFQ</label>
+        <select id="selRfq"><option value="">Loading RFQs...</option></select>
+
+        <label for="selVendor">Vendor</label>
+        <select id="selVendor"><option value="">Loading Vendors...</option></select>
+
+        <label for="docUrl">Document PDF / Public URL</label>
+        <input type="text" id="docUrl" value="https://raw.githubusercontent.com/example/quotes/apex-quote-001.pdf" />
+
+        <button onclick="triggerUploadQuote()">Ingest Quote (uploadQuote)</button>
+      </div>
+
+      <!-- 2. Comparison Weight Slider Form -->
+      <div class="card">
+        <h2>2. Compare & Rank RFQ</h2>
+        <p style="font-size: 12px; color: var(--text-muted);">Adjust evaluation weights (must sum to 1.00):</p>
+        
+        <label>Price Weight: <span id="lblPrice">0.50</span></label>
+        <input type="range" id="rngPrice" min="0" max="1" step="0.05" value="0.50" oninput="syncWeights('price')" />
+
+        <label>Lead Time Weight: <span id="lblLead">0.30</span></label>
+        <input type="range" id="rngLead" min="0" max="1" step="0.05" value="0.30" oninput="syncWeights('lead')" />
+
+        <label>Quality / Vendor Rating Weight: <span id="lblQuality">0.20</span></label>
+        <input type="range" id="rngQuality" min="0" max="1" step="0.05" value="0.20" readonly disabled />
+
+        <button class="success" onclick="triggerCompareRFQ()">Run Comparison (compareRFQ)</button>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN: Active State & Tables -->
+    <div>
+      <!-- Quotes Status Table -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h2>Quotes Ingested for Selected RFQ</h2>
+          <button class="secondary" onclick="loadQuotes()">Refresh</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Quote ID</th>
+              <th>Vendor</th>
+              <th>Status</th>
+              <th>Document URL</th>
+              <th>Total Amount</th>
+            </tr>
+          </thead>
+          <tbody id="tblQuotes">
+            <tr><td colspan="5" style="text-align: center;">No RFQ selected.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Human in the Loop (HITL) Review Queue -->
+      <div class="card">
+        <h2>Human-in-the-Loop Review Queue (Low Confidence Line Items)</h2>
+        <p style="font-size: 12px; color: var(--text-muted);">Items extracted with confidence &lt; 0.80 or explicitly flagged for manual verification:</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Quote</th>
+              <th>Material</th>
+              <th>Confidence</th>
+              <th>Unit Price</th>
+              <th>Qty</th>
+              <th>Lead Time</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="tblReviewQueue">
+            <tr><td colspan="7" style="text-align: center;">Queue is clean. No items need review.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Comparison Results Table -->
+      <div class="card">
+        <h2>Comparison & Deterministic Ranking Results</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Vendor</th>
+              <th>Total Price</th>
+              <th>Avg Lead Time (Days)</th>
+              <th>Composite Score</th>
+            </tr>
+          </thead>
+          <tbody id="tblResults">
+            <tr><td colspan="5" style="text-align: center;">No comparison run yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = '/rfq';
+
+    function showAlert(msg, isError = false) {
+      const el = document.getElementById('alert');
+      el.innerText = msg;
+      el.className = 'alert-bar ' + (isError ? 'alert-error' : 'alert-success');
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 4500);
+    }
+
+    function syncWeights(changed) {
+      let p = parseFloat(document.getElementById('rngPrice').value);
+      let l = parseFloat(document.getElementById('rngLead').value);
+      if (p + l > 1.0) {
+        if (changed === 'price') l = parseFloat((1.0 - p).toFixed(2));
+        else p = parseFloat((1.0 - l).toFixed(2));
+      }
+      const q = parseFloat((1.0 - (p + l)).toFixed(2));
+      
+      document.getElementById('rngPrice').value = p;
+      document.getElementById('rngLead').value = l;
+      document.getElementById('rngQuality').value = q;
+
+      document.getElementById('lblPrice').innerText = p.toFixed(2);
+      document.getElementById('lblLead').innerText = l.toFixed(2);
+      document.getElementById('lblQuality').innerText = q.toFixed(2);
+    }
+
+    async function init() {
+      try {
+        // Load RFQs
+        const rfqRes = await fetch(`${API}/RFQs`);
+        const rfqData = await rfqRes.json();
+        const selRfq = document.getElementById('selRfq');
+        selRfq.innerHTML = (rfqData.value || []).map(r => `<option value="${r.ID}">${r.title} (${r.ID.substring(0,8)}...)</option>`).join('');
+
+        // Load Vendors
+        const vendorRes = await fetch(`${API}/Vendors`);
+        const vendorData = await vendorRes.json();
+        const selVendor = document.getElementById('selVendor');
+        selVendor.innerHTML = (vendorData.value || []).map(v => `<option value="${v.ID}">${v.name} (Rating: ${v.rating})</option>`).join('');
+
+        selRfq.addEventListener('change', () => { loadQuotes(); loadReviewQueue(); });
+        if (selRfq.value) {
+          loadQuotes();
+          loadReviewQueue();
+        }
+      } catch (err) {
+        showAlert('Failed initializing master data: ' + err.message, true);
+      }
+    }
+
+    async function loadQuotes() {
+      const rfqId = document.getElementById('selRfq').value;
+      if (!rfqId) return;
+      const res = await fetch(`${API}/Quotes?$filter=rfq_ID eq ${rfqId}&$expand=vendor`);
+      const data = await res.json();
+      const tbody = document.getElementById('tblQuotes');
+      
+      if (!data.value || data.value.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No quotes submitted yet for this RFQ.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.value.map(q => `
+        <tr>
+          <td><code>${q.ID.substring(0,8)}...</code></td>
+          <td>${q.vendor ? q.vendor.name : 'N/A'}</td>
+          <td><span class="badge status-${q.status}">${q.status}</span></td>
+          <td><a href="${q.documentUrl}" target="_blank" style="font-size: 11px;">${q.documentUrl.substring(0,35)}...</a></td>
+          <td>${q.totalAmount ? '$' + Number(q.totalAmount).toFixed(2) : '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function loadReviewQueue() {
+      const res = await fetch(`${API}/QuoteLineItems?$filter=needsReview eq true and isReviewed eq false`);
+      const data = await res.json();
+      const tbody = document.getElementById('tblReviewQueue');
+
+      if (!data.value || data.value.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">Queue is clean. No line items need review.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.value.map(item => `
+        <tr>
+          <td><code>${item.quote_ID.substring(0,8)}...</code></td>
+          <td>${item.materialNumber || 'N/A'}</td>
+          <td><span style="color: ${item.confidenceScore < 0.8 ? 'red' : 'green'}; font-weight: bold;">${(item.confidenceScore * 100).toFixed(0)}%</span></td>
+          <td><input type="number" id="price_${item.ID}" value="${item.unitPrice || 0}" style="width: 80px; margin: 0;"></td>
+          <td><input type="number" id="qty_${item.ID}" value="${item.quantity || 0}" style="width: 70px; margin: 0;"></td>
+          <td><input type="number" id="lead_${item.ID}" value="${item.leadTimeDays || 0}" style="width: 60px; margin: 0;"></td>
+          <td><button onclick="submitReview('${item.ID}')" style="padding: 4px 8px; font-size: 11px;">Save & Approve</button></td>
+        </tr>
+      `).join('');
+    }
+
+    async function triggerUploadQuote() {
+      const rfqId = document.getElementById('selRfq').value;
+      const vendorId = document.getElementById('selVendor').value;
+      const documentUrl = document.getElementById('docUrl').value;
+
+      try {
+        const res = await fetch(`${API}/uploadQuote`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rfqId, vendorId, documentUrl })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || 'Error occurred');
+        
+        showAlert(`Quote uploaded successfully! ID: ${data.quoteId}`);
+        loadQuotes();
+      } catch (err) {
+        showAlert(err.message, true);
+      }
+    }
+
+    async function submitReview(lineItemId) {
+      const correctedPrice = parseFloat(document.getElementById(`price_${lineItemId}`).value);
+      const correctedQty = parseInt(document.getElementById(`qty_${lineItemId}`).value, 10);
+      const correctedLeadTime = parseInt(document.getElementById(`lead_${lineItemId}`).value, 10);
+
+      try {
+        const res = await fetch(`${API}/reviewLineItem`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lineItemId,
+            correctedPrice,
+            correctedQty,
+            correctedLeadTime,
+            comment: 'Approved via UI Workbench'
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || 'Error occurred');
+
+        showAlert(`Line item ${lineItemId.substring(0,8)} reviewed and updated.`);
+        loadReviewQueue();
+        loadQuotes();
+      } catch (err) {
+        showAlert(err.message, true);
+      }
+    }
+
+    async function triggerCompareRFQ() {
+      const rfqId = document.getElementById('selRfq').value;
+      const priceWeight = parseFloat(document.getElementById('rngPrice').value);
+      const leadTimeWeight = parseFloat(document.getElementById('rngLead').value);
+      const qualityWeight = parseFloat(document.getElementById('rngQuality').value);
+
+      try {
+        const res = await fetch(`${API}/compareRFQ`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rfqId,
+            weights: { priceWeight, leadTimeWeight, qualityWeight }
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || 'Comparison failed');
+
+        const tbody = document.getElementById('tblResults');
+        const results = data.value || [];
+        if (results.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No eligible quotes evaluated.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = results.map(r => `
+          <tr>
+            <td><strong>#${r.rank}</strong></td>
+            <td>${r.vendorName}</td>
+            <td>$${Number(r.totalPrice).toFixed(2)}</td>
+            <td>${r.avgLeadTime} days</td>
+            <td><strong>${Number(r.compositeScore).toFixed(2)}</strong></td>
+          </tr>
+        `).join('');
+
+        showAlert('Comparison completed successfully!');
+        loadQuotes();
+      } catch (err) {
+        showAlert(err.message, true);
+      }
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
