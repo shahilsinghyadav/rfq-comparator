@@ -154,4 +154,4 @@ curl -X POST http://localhost:4004/rfq/compareRFQ \
 
 Cloud Integration Flow (`Process_Vendor_Quote`) designed to ingest vendor quote documents from a URL, extract line items and pricing using Google Gemini 2.5 Flash, compute confidence scores, and return structured extraction payloads to SAP CAP.
 ```
-# Refer to https://github.com/shahilsinghyadav/RFQ_AI_Core_Integration for further AI logic
+### Refer to https://github.com/shahilsinghyadav/RFQ_AI_Core_Integration for further AI logic
